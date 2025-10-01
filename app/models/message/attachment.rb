@@ -5,9 +5,7 @@ module Message::Attachment
   THUMBNAIL_MAX_HEIGHT = 800
 
   included do
-    has_one_attached :attachment do |attachable|
-      attachable.variant :thumb, resize_to_limit: [ THUMBNAIL_MAX_WIDTH, THUMBNAIL_MAX_HEIGHT ]
-    end
+    has_one_attached :attachment
   end
 
   module ClassMethods
@@ -25,17 +23,28 @@ module Message::Attachment
     process_attachment_thumbnail
   end
 
-  private
-    def ensure_attachment_analyzed
-      attachment&.analyze
+  def thumbnail_variant
+    return unless attachment.attached?
+    if attachment.video?
+      attachment.preview(format: :webp, resize_to_limit: [THUMBNAIL_MAX_WIDTH, THUMBNAIL_MAX_HEIGHT])
+    elsif attachment.image?
+      attachment.variant(resize_to_limit: [THUMBNAIL_MAX_WIDTH, THUMBNAIL_MAX_HEIGHT])
+    else
+      nil
     end
+  end
 
-    def process_attachment_thumbnail
-      case
-      when attachment.video?
-        attachment.preview(format: :webp).processed
-      when attachment.representable?
-        attachment.representation(:thumb).processed
-      end
-    end
+  private
+
+  def ensure_attachment_analyzed
+    attachment&.analyze
+  end
+
+  def process_attachment_thumbnail
+    variant = thumbnail_variant
+    variant&.processed
+  rescue => e
+    Rails.logger.error("[Message::Attachment] Failed to process thumbnail: #{e.message}")
+    nil
+  end
 end

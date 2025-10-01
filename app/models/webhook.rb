@@ -7,7 +7,9 @@ class Webhook < ApplicationRecord
   belongs_to :user
 
   def deliver(message)
+    Rails.logger.info "------------------------------Webhook#deliver called------------------------------"
     post(payload(message)).tap do |response|
+      Rails.logger.info "------------------------------Webhook#deliver response: #{response.inspect}------------------------------"
       if text = extract_text_from(response)
         receive_text_reply_to(message.room, text: text)
       elsif attachment = extract_attachment_from(response)
@@ -15,7 +17,10 @@ class Webhook < ApplicationRecord
       end
     end
   rescue Net::OpenTimeout, Net::ReadTimeout
+    Rails.logger.error "------------------------------Webhook#deliver timeout------------------------------"
     receive_text_reply_to message.room, text: "Failed to respond within #{ENDPOINT_TIMEOUT} seconds"
+  rescue => e
+    Rails.logger.error "------------------------------Webhook#deliver error: #{e.class} #{e.message}------------------------------"
   end
 
   private
@@ -37,11 +42,35 @@ class Webhook < ApplicationRecord
     end
 
     def payload(message)
-      {
+      message_data = {
+        id: message.id,
+        body: { html: message.body.body, plain: without_recipient_mentions(message.plain_text_body),static:"yellow" },
+        path: message_path(message),
+        content_type: message.content_type
+      }
+
+      # Include attachment information if message has an attachment
+      if message.attachment.attached?
+        message_data[:attachment] = {
+          filename: message.attachment.filename.to_s,
+          content_type: message.attachment.content_type,
+          url: attachment_url(message.attachment),
+          size: message.attachment.byte_size,
+          metadata: message.attachment.metadata,
+          base64: Base64.strict_encode64(message.attachment.download)
+        }
+        Rails.logger.info "------------------------------Webhook#deliver attachment included: #{message_data[:attachment].inspect}------------------------------"
+      else
+        Rails.logger.info "------------------------------Webhook#deliver no attachment found------------------------------"
+      end
+
+      payload_hash = {
         user:    { id: message.creator.id, name: message.creator.name },
         room:    { id: message.room.id, name: message.room.name, path: room_bot_messages_path(message) },
-        message: { id: message.id, body: { html: message.body.body, plain: without_recipient_mentions(message.plain_text_body) }, path: message_path(message) }
-      }.to_json
+        message: message_data
+      }
+      Rails.logger.info "------------------------------Webhook#deliver payload: #{payload_hash.inspect}------------------------------"
+      payload_hash.to_json
     end
 
     def message_path(message)
@@ -50,6 +79,10 @@ class Webhook < ApplicationRecord
 
     def room_bot_messages_path(message)
       Rails.application.routes.url_helpers.room_bot_messages_path(message.room, user.bot_key)
+    end
+
+    def attachment_url(attachment)
+      Rails.application.routes.url_helpers.rails_blob_url(attachment)
     end
 
     def extract_text_from(response)
