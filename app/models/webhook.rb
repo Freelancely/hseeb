@@ -44,25 +44,35 @@ class Webhook < ApplicationRecord
     def payload(message)
       message_data = {
         id: message.id,
-        body: { html: message.body.body, plain: without_recipient_mentions(message.plain_text_body),static:"yellow" },
-        path: message_path(message),
-        content_type: message.content_type
+        body: { html: message.body.body, plain: without_recipient_mentions(message.plain_text_body), static: "yellow" },
+        path: message_path(message)
       }
 
-      # Include attachment information if message has an attachment
+      attachments = []
+      primary_attachment = nil
+
+      # Collect primary attachment (direct) and any embeds
       if message.attachment.attached?
-        message_data[:attachment] = {
-          filename: message.attachment.filename.to_s,
-          content_type: message.attachment.content_type,
-          url: attachment_url(message.attachment),
-          size: message.attachment.byte_size,
-          metadata: message.attachment.metadata,
-          base64: Base64.strict_encode64(message.attachment.download)
-        }
-        Rails.logger.info "------------------------------Webhook#deliver attachment included: #{message_data[:attachment].inspect}------------------------------"
-      else
-        Rails.logger.info "------------------------------Webhook#deliver no attachment found------------------------------"
+        primary_attachment = message.attachment
+        attachments << build_attachment_hash_from_active_storage_attachment(message.attachment)
       end
+
+      if message.body && message.body.respond_to?(:embeds)
+        message.body.embeds.each do |embed|
+          if embed.respond_to?(:attachment) && embed.attachment&.blob
+            primary_attachment ||= embed.attachment
+            attachments << build_attachment_hash_from_active_storage_attachment(embed.attachment)
+          end
+        end
+      end
+
+      # Unified payload fields regardless of presence
+      message_data[:attachments] = attachments
+      message_data[:attachment] = attachments.first
+      message_data[:attachment_url] = primary_attachment ? attachment_url(primary_attachment) : nil
+
+      # Prefer to mark as attachment if any found, else use message's own content type
+      message_data[:content_type] = primary_attachment ? "attachment" : message.content_type
 
       payload_hash = {
         user:    { id: message.creator.id, name: message.creator.name },
@@ -82,7 +92,24 @@ class Webhook < ApplicationRecord
     end
 
     def attachment_url(attachment)
-      Rails.application.routes.url_helpers.rails_blob_url(attachment)
+      if Rails.application.config.active_storage.service == :local
+        Rails.application.routes.url_helpers.rails_blob_url(
+          attachment,
+          host: ENV.fetch("HOST_URL")
+        )
+      else
+        attachment.service_url(expires_in: 1.hour, disposition: "inline")
+      end
+    end
+
+    def build_attachment_hash_from_active_storage_attachment(attachment)
+      {
+        filename: attachment.filename.to_s,
+        content_type: attachment.content_type,
+        url: attachment_url(attachment),
+        size: attachment.byte_size,
+        metadata: attachment.metadata
+      }
     end
 
     def extract_text_from(response)

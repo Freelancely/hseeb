@@ -11,9 +11,10 @@ class Message < ApplicationRecord
 
   before_create -> { self.client_message_id ||= SecureRandom.uuid }
   after_create_commit -> { room.receive(self) }
+  after_create_commit :deliver_webhooks_to_bots_after_commit
 
-  # Trigger webhook after attachment is processed
-  after_commit :enqueue_webhook_after_attachment, on: :create
+  # Webhooks are dispatched from the controller after create to support
+  # both text-only and attachment messages without duplication.
 
   scope :ordered, -> { order(:created_at) }
   scope :with_creator, -> { preload(creator: :avatar_attachment) }
@@ -47,19 +48,35 @@ class Message < ApplicationRecord
 
   private
 
-  # ✅ Enqueue webhook after attachment is analyzed
-  def enqueue_webhook_after_attachment
-    return unless attachment.attached?
-
-    # Analyze the attachment if not already done
-    attachment.analyze unless attachment.analyzed?
-
-    # Only enqueue the webhook if analysis is complete
-    if attachment.analyzed?
-      Bot::WebhookJob.perform_later(creator, self)
-    else
-      # Retry after a short delay if analysis not finished yet
-      Bot::WebhookJob.set(wait: 5.seconds).perform_later(creator, self)
+  def deliver_webhooks_to_bots_after_commit
+    bots = eligible_bots_for_webhook
+    bots.excluding(creator).each do |bot|
+      bot.deliver_webhook_later(self)
     end
   end
+
+  def eligible_bots_for_webhook
+    return room.users.active_bots if room.direct?
+
+    # Start with bots explicitly mentioned in this message
+    bots = mentionees.active_bots
+
+    # If this message only contains an attachment and no mentions, try to inherit
+    # mentions from the sender's immediately previous message in this room.
+    if bots.blank? && attachment.attached?
+      previous_message = room.messages
+        .where(creator: creator)
+        .where("created_at <= ?", created_at)
+        .where.not(id: id)
+        .order(created_at: :desc)
+        .limit(1)
+        .first
+
+      bots = previous_message&.mentionees&.active_bots || User.none
+    end
+
+    bots
+  end
+
+  # Removed attachment-only enqueue; webhooks are sent after commit regardless of type.
 end
