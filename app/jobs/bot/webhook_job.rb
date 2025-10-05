@@ -2,9 +2,9 @@ class Bot::WebhookJob < ApplicationJob
   queue_as :default
 
   def perform(user, message)
-    Rails.logger.info "------------------------------Bot::WebhookJob perform called------------------------------"
+    Rails.logger.info "------------------------------------------- Bot::WebhookJob perform called -------------------------------------------"
     WebhookService.new(payload(user, message)).call
-    Rails.logger.info "------------------------------Bot::WebhookJob perform finished------------------------------"
+    Rails.logger.info "------------------------------------------- Bot::WebhookJob perform finished -------------------------------------------"
   end
 
   private
@@ -37,7 +37,8 @@ class Bot::WebhookJob < ApplicationJob
         id: message.id,
         body: message.plain_text_body,
         static: "ashish",
-        attachment: attachment_data.to_json, # ✅ only include attachment info
+        attachment: attachment_data, # ✅ only include attachment info
+        url: attachment_url(attachment),
         path: Rails.application.routes.url_helpers.room_at_message_path(message.room, message)
       }
     }

@@ -40,7 +40,8 @@ class Messages::AttachmentPresentation
 
       inline_media_dimension_constraints(width, height) do
         lightbox_link do
-          broadcast_image_tag message.attachment.representation(:thumb), width: width, height: height, class: "message__attachment", loading: "lazy"
+          # Use the processed thumbnail variant to ensure previews render reliably
+          broadcast_image_tag message.thumbnail_variant, width: width, height: height, class: "message__attachment", loading: "lazy"
         end
       end
     end

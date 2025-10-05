@@ -12,8 +12,8 @@ class Message < ApplicationRecord
   before_create -> { self.client_message_id ||= SecureRandom.uuid }
   after_create_commit -> { room.receive(self) }
 
-  # Trigger webhook after attachment is processed
-  after_commit :enqueue_webhook_after_attachment, on: :create
+  # Trigger webhook: immediately for text-only; after analysis for attachments
+  after_create_commit :enqueue_webhook_after_commit
 
   scope :ordered, -> { order(:created_at) }
   scope :with_creator, -> { preload(creator: :avatar_attachment) }
@@ -47,19 +47,20 @@ class Message < ApplicationRecord
 
   private
 
-  # ✅ Enqueue webhook after attachment is analyzed
-  def enqueue_webhook_after_attachment
-    return unless attachment.attached?
+  # ✅ Enqueue webhook appropriately based on presence of attachment
+  def enqueue_webhook_after_commit
+    if attachment.attached?
+      Rails.logger.info "------------------------------------------- Message enqueue_webhook_after_commit with attachment -------------------------------------------"
+      attachment.analyze unless attachment.analyzed?
 
-    # Analyze the attachment if not already done
-    attachment.analyze unless attachment.analyzed?
-
-    # Only enqueue the webhook if analysis is complete
-    if attachment.analyzed?
-      Bot::WebhookJob.perform_later(creator, self)
+      if attachment.analyzed?
+        Bot::WebhookJob.perform_later(creator, self)
+      else
+        Bot::WebhookJob.set(wait: 5.seconds).perform_later(creator, self)
+      end
     else
-      # Retry after a short delay if analysis not finished yet
-      Bot::WebhookJob.set(wait: 5.seconds).perform_later(creator, self)
+      Rails.logger.info "------------------------------------------- Message enqueue_webhook_after_commit for text-only -------------------------------------------"
+      Bot::WebhookJob.perform_later(creator, self)
     end
   end
 end

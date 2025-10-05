@@ -7,9 +7,16 @@ class Webhook < ApplicationRecord
   belongs_to :user
 
   def deliver(message)
-    Rails.logger.info "------------------------------Webhook#deliver called------------------------------"
-    post(payload(message)).tap do |response|
-      Rails.logger.info "------------------------------Webhook#deliver response: #{response.inspect}------------------------------"
+    Rails.logger.info "------------------------------------------- Webhook#deliver called -------------------------------------------"
+    payload_json = payload(message)
+    Rails.logger.info "------------------------------------------- Webhook#deliver payload sent: #{payload_json} -------------------------------------------"
+    post(payload_json).tap do |response|
+      Rails.logger.info "------------------------------------------- Webhook#deliver response: #{response.inspect} -------------------------------------------"
+      begin
+        Rails.logger.info "------------------------------------------- Webhook#deliver payload received: #{response.body} -------------------------------------------"
+      rescue => e
+        Rails.logger.error "------------------------------------------- Webhook#deliver response log error: #{e.class} #{e.message} -------------------------------------------"
+      end
       if text = extract_text_from(response)
         receive_text_reply_to(message.room, text: text)
       elsif attachment = extract_attachment_from(response)
@@ -17,10 +24,10 @@ class Webhook < ApplicationRecord
       end
     end
   rescue Net::OpenTimeout, Net::ReadTimeout
-    Rails.logger.error "------------------------------Webhook#deliver timeout------------------------------"
+    Rails.logger.error "------------------------------------------- Webhook#deliver timeout -------------------------------------------"
     receive_text_reply_to message.room, text: "Failed to respond within #{ENDPOINT_TIMEOUT} seconds"
   rescue => e
-    Rails.logger.error "------------------------------Webhook#deliver error: #{e.class} #{e.message}------------------------------"
+    Rails.logger.error "------------------------------------------- Webhook#deliver error: #{e.class} #{e.message} -------------------------------------------"
   end
 
   private
@@ -59,9 +66,9 @@ class Webhook < ApplicationRecord
           metadata: message.attachment.metadata,
           base64: Base64.strict_encode64(message.attachment.download)
         }
-        Rails.logger.info "------------------------------Webhook#deliver attachment included: #{message_data[:attachment].inspect}------------------------------"
+        Rails.logger.info "------------------------------------------- Webhook#deliver attachment included: #{message_data[:attachment].inspect} -------------------------------------------"
       else
-        Rails.logger.info "------------------------------Webhook#deliver no attachment found------------------------------"
+        Rails.logger.info "------------------------------------------- Webhook#deliver no attachment found -------------------------------------------"
       end
 
       payload_hash = {
@@ -69,7 +76,7 @@ class Webhook < ApplicationRecord
         room:    { id: message.room.id, name: message.room.name, path: room_bot_messages_path(message) },
         message: message_data
       }
-      Rails.logger.info "------------------------------Webhook#deliver payload: #{payload_hash.inspect}------------------------------"
+      Rails.logger.info "------------------------------------------- Webhook#deliver payload: #{payload_hash.inspect} -------------------------------------------"
       payload_hash.to_json
     end
 

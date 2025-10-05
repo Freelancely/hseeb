@@ -19,11 +19,26 @@ class MessagesController < ApplicationController
 
   def create
     set_room
+    Rails.logger.info "------------------------------------------- MessagesController#create called -------------------------------------------"
+    begin
+      payload_log = message_params.except(:attachment)
+      if message_params[:attachment]
+        att = message_params[:attachment]
+        att_info = { filename: (att.respond_to?(:original_filename) ? att.original_filename : nil), content_type: (att.respond_to?(:content_type) ? att.content_type : nil), size: (att.respond_to?(:size) ? att.size : nil) }
+        Rails.logger.info "------------------------------------------- MessagesController#create payload received: #{payload_log.inspect}, attachment: #{att_info.inspect} -------------------------------------------"
+      else
+        Rails.logger.info "------------------------------------------- MessagesController#create payload received: #{payload_log.inspect} -------------------------------------------"
+      end
+    rescue => e
+      Rails.logger.error "------------------------------------------- MessagesController#create payload log error: #{e.class} #{e.message} -------------------------------------------"
+    end
     @message = @room.messages.create_with_attachment!(message_params)
 
     @message.broadcast_create
     deliver_webhooks_to_bots
+    Rails.logger.info "------------------------------------------- MessagesController#create finished -------------------------------------------"
   rescue ActiveRecord::RecordNotFound
+    Rails.logger.error "------------------------------------------- MessagesController#create room not found -------------------------------------------"
     render action: :room_not_found
   end
 
