@@ -12,26 +12,27 @@ class WebhookService
     Rails.logger.info "------------------------------------------- Payload sent: #{@payload.inspect} -------------------------------------------"
     
     uri = URI.parse(ENV.fetch("WEBHOOK_URL"))
-    Rails.logger.info "------------------------------------------- Hitting Webhook URL: #{uri} -------------------------------------------"  # ✅ Print URL
+    Rails.logger.info "------------------------------------------- Hitting Webhook URL: #{uri} -------------------------------------------"
   
-    request = Net::HTTP::Post.new(uri)
-    request.content_type = "application/json"
+    request = Net::HTTP::Post.new(uri, "Content-Type" => "application/json")
     request.body = @payload.to_json
   
     response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https") do |http|
-      http.open_timeout = 7
-      http.read_timeout = 7
+      http.open_timeout = 30 # Increase to 30 seconds
+      http.read_timeout = 30 # Increase to 30 seconds
       http.request(request)
     end
   
-    begin
-      Rails.logger.info "------------------------------------------- Webhook response status: #{response.code} headers: #{response.to_hash.inspect} -------------------------------------------"
-      Rails.logger.info "------------------------------------------- Webhook payload received: #{response.body} -------------------------------------------"
-    rescue => e
-      Rails.logger.error "------------------------------------------- Webhook response log error: #{e.class} #{e.message} -------------------------------------------"
-    end
-    Rails.logger.info "------------------------------------------- WebhookService call finished -------------------------------------------"
+    Rails.logger.info "------------------------------------------- Webhook response status: #{response.code} headers: #{response.to_hash.inspect} -------------------------------------------"
+    Rails.logger.info "------------------------------------------- Webhook payload received: #{response.body} -------------------------------------------"
+    response
+  rescue Net::ReadTimeout => e
+    Rails.logger.error "------------------------------------------- Webhook failed: #{e.class} #{e.message} -------------------------------------------"
+    raise
   rescue StandardError => e
-    Rails.logger.error "------------------------------------------- Webhook failed: #{e.message} -------------------------------------------"
+    Rails.logger.error "------------------------------------------- Webhook failed: #{e.class} #{e.message} -------------------------------------------"
+    raise
+  ensure
+    Rails.logger.info "------------------------------------------- WebhookService call finished -------------------------------------------"
   end
-end  
+end
