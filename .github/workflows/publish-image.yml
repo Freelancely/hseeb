@@ -20,7 +20,7 @@ permissions:
   attestations: write
 
 env:
-  IMAGE_DESCRIPTION: Campfire is a web-based chat application with multiple rooms, direct messages, file attachments with previews, search, web push notifications, @mentions, and bot integrations. Single-tenant; production-ready image with web app, background jobs, caching, file serving, and SSL.
+  IMAGE_DESCRIPTION: Haseeb is a web-based chat application with multiple rooms, direct messages, file attachments with previews, search, web push notifications, @mentions, and bot integrations. Single-tenant; production-ready image with web app, background jobs, caching, file serving, and SSL.
   SOURCE_URL: https://github.com/${{ github.repository }}
 
 jobs:

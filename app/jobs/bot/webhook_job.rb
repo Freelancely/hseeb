@@ -28,7 +28,7 @@ class Bot::WebhookJob < ApplicationJob
     has_attachment = message.attachment.attached?
 
     # Skip mention-only messages (without attachments)
-    # This handles the dual-message behavior from Campfire's composer:
+    # This handles the dual-message behavior from Haseeb's composer:
     # - When user sends "@mention" + file, it creates TWO messages:
     #   1. File upload message (attachment only, empty body) -> PROCESS THIS
     #   2. Text message (@mention only, no attachment) -> SKIP THIS
@@ -163,7 +163,6 @@ class Bot::WebhookJob < ApplicationJob
     message_data = {
       id: message.id,
       body: body_text,
-      static: "ashish",
       path: Rails.application.routes.url_helpers.room_at_message_path(message.room, message)
     }
     
